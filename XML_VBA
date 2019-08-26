@@ -1,0 +1,1160 @@
+Private Sub Form_Timer()
+
+'Update ServiceNow tickets (TASK and Inc) with UPS tracking numbers
+'If Hour(Now()) > "20" Then
+If Hour(Now()) > "20" And Hour(Now()) < "24" Then
+    If Me.txtupdatedone.Value <> Date Then
+        Me.txtupdatedone = Date
+        AppendTxt (Now() & " - Started nightly processing")
+        
+       'runs and update UPS estimated delivery date into Tracking tabel
+        AppendTxt (Now() & " - Updating Shipping ETA in Tracking table")
+        Dim myPatha As String
+        myPatha = "K:\POS Database\UPSTNTdeliveryDate.exe"
+        Call Shell(myPatha, 1)
+    
+        Dim strSqlTX
+        Dim rsTX
+        Dim LBLcounterTX
+        Dim ref5TX
+        Dim TrackingTX
+        Dim strisQTX
+        Dim tesTX
+        Dim strt00TX
+        Dim strSql10TX
+        Dim rs10TX
+        Dim TaskIDTX
+        Dim stTX
+        Dim rs101TX
+        Dim strsqlr1TX
+        Dim varReturnTX
+        Dim stntotTX
+
+        AppendTxt (Now() & " - Getting Shipping Tracking Data Ready For Use")
+        DoCmd.SetWarnings False
+        varReturnTX = SysCmd(acSysCmdSetStatus, "Running qry#1... qryTracking#_UpdateSalonNumber")
+        DoCmd.OpenQuery "qryTracking#_UpdateSalonNumber"
+        AppendTxt (Now() & " - qryTracking#_UpdateSalonNumber query was run")
+        'DoCmd.OpenQuery "qryHeatDetailUpDate_Tracking"  - Heat data no longer needed
+        varReturnTX = SysCmd(acSysCmdSetStatus, "Running qry#2... qryUPSTracking_AppendRegis1")
+        DoCmd.OpenQuery "qryUPSTracking_AppendRegis1"
+        AppendTxt (Now() & " - qryUPSTracking_AppendRegis1 query was run")
+        varReturnTX = SysCmd(acSysCmdSetStatus, "Running qry#3... qryFedExTracking#_TrackLinkUpdate")
+        DoCmd.OpenQuery "qryFedExTracking#_TrackLinkUpdate"
+        AppendTxt (Now() & " - qryFedExTracking#_TrackLinkUpdate query was run")
+        varReturnTX = SysCmd(acSysCmdSetStatus, "Running last Qry... qryReplicationDateUpdate")
+        DoCmd.OpenQuery "qryReplicationDateUpdate"
+        AppendTxt (Now() & " - qryReplicationDateUpdate query was run")
+        DoCmd.SetWarnings True
+        'varReturnTX = SysCmd(acSysCmdSetStatus, " ")
+         AppendTxt (Now() & " - Completed Getting Shipping Tracking Ready For Use")
+        
+         
+    'updates the in-bound tracking info in servicenow
+        AppendTxt (Now() & " - Started Proccess to push Return UPS Tracking into ServcieNow")
+        strSqlTX = "SELECT [TRACKING#].P_REFERENCE5, [TRACKING#].P_TRACKINGNUMBER, [TRACKING#].Replicated, [TRACKING#].P_DATEENTERED, [TRACKING#].SI_VOIDINDICATOR, [TRACKING#].SI_RETURNSERVICEOPTION " & vbCrLf & _
+        "FROM [TRACKING#] " & vbCrLf & _
+        "WHERE ((([TRACKING#].P_DATEENTERED) > Date()-7) AND (([TRACKING#].Replicated) is null) AND (([TRACKING#].SI_VOIDINDICATOR)=""N"") AND (([TRACKING#].SI_RETURNSERVICEOPTION)=""Y""));"
+        Set rsTX = CurrentDb.OpenRecordset(strSqlTX)
+        stntotTX = rsTX.RecordCount
+        
+        If stntotTX <> 0 Then
+            rsTX.MoveLast
+            stntotTX1 = rsTX.RecordCount
+            rsTX.MoveFirst
+            LBLcounterTX = 1
+ 
+             AppendTxt (Now() & " - Updating Return Tracking in ServiceNow. Total tickts: " & stntotTX1)
+
+            With rsTX
+                Do While Not .EOF
+                ref5TX = (rsTX.Fields(0))
+                TrackingTX = (rsTX.Fields(1))
+                strisQTX = Left(ref5TX, 1)
+            
+                If strisQTX = "Q" Then
+                    tesTX = "RE"
+                    strt00TX = "'" & tesTX & ref5TX & "'"
+                    varReturnTX = SysCmd(acSysCmdSetStatus, "Updateing Order Equipment Tickets " & LBLcounterTX & " Of " & stntotTX)
+                    strSql10TX = "SELECT OAUSER_sc_task.number " & vbCrLf & _
+                    "FROM OAUSER_sc_task " & vbCrLf & _
+                    "WHERE (((OAUSER_sc_task.dv_request)= " & strt00TX & ") AND ((OAUSER_sc_task.description)=""POS Closing Kit"" Or (OAUSER_sc_task.short_description)=""Equipment Received""));"
+                    Set rs101TX = CurrentDb.OpenRecordset(strSql10TX)
+                        
+                        If rs101TX.RecordCount > 0 Then
+                            TaskIDTX = (rs101TX.Fields(0))
+                            stTX = "cmd.exe /c start /D ""K:\POS Database\servicenowpearl"" /High C:\strawberryPerl\perl\bin\wperl.exe Regis_update_snrequest_tracking_Return.pl " & """" & TaskIDTX & """" & " " & """" & "UPS" & """" & " " & """" & TrackingTX & """"
+                            Call Shell(stTX, vbHide)
+                            DoCmd.SetWarnings False
+                            AppendTxt (Now() & " - Request was removed from for ticket#: " & TaskIDTX)
+                        End If
+                        
+                    strsqlr1TX = "UPDATE [TRACKING#] SET [TRACKING#].Replicated = 2 " & vbCrLf & _
+                    "WHERE ((([TRACKING#].P_TRACKINGNUMBER)='" & TrackingTX & "'));"
+                    DoCmd.SetWarnings False
+                    DoCmd.RunSQL strsqlr1TX, dbFailOnError
+                    DoCmd.SetWarnings True
+                    rs101TX.Close
+                    Set rs101TX = Nothing
+                    AppendTxt (Now() & " - updated return tracking data for ticket#: " & TaskIDTX)
+                End If
+        
+                LBLcounterTX = LBLcounterTX + 1
+                .MoveNext
+                Loop
+            End With
+            AppendTxt (Now() & " - Completed Proccess to push Return UPS Tracking into ServcieNow")
+            rsTX.Close
+            Set rsTX = Nothing
+            
+' need to check this
+            DoCmd.SetWarnings False
+            varReturnTX = SysCmd(acSysCmdSetStatus, "Running last Qry... qryReplicationDateUpdate")
+            DoCmd.OpenQuery "qryReplicationDateUpdate"
+            DoCmd.SetWarnings True
+            
+            varReturnTX = SysCmd(acSysCmdSetStatus, " ")
+         Else
+            AppendTxt (Now() & " - No return tracking record needed to be updated")
+         End If
+         
+    'start of archive code
+        AppendTxt (Now() & " - Started Proccess to Archive Old XML files")
+    
+        Dim sNameTX1
+        Dim fsoTX1
+        Dim FolTX1
+        Dim filTX1
+        Dim fTX1
+        Dim mydateTX1 As String
+        Dim mydatestrTX1
+        Dim mydatearTX1
+        Dim strdateTX1
+        Dim StrfilTX1
+        Dim xTX1
+        Dim YTX1
+        Dim DataFilesTX1
+        Dim varReturnTX1
+        mydateTX1 = Now
+        mydatestrTX1 = Format(mydateTX1, "mmddyyyy")
+        mydatearTX1 = Now - 7
+
+
+
+        Set fsoTX1 = CreateObject("Scripting.FileSystemObject")
+        Set FolTX1 = fsoTX1.getfolder("K:\POS Database\upsshare2\UPS\WSTD\ImpExp\XML Auto Import")
+        Set DataFilesTX1 = FolTX1.Files
+        xTX1 = DataFilesTX1.Count
+        YTX1 = 1
+    
+        For Each filTX1 In FolTX1.Files
+            varReturnTX1 = SysCmd(acSysCmdSetStatus, "Progress: " & YTX1 & " of " & xTX1 & ": " & Format(YTX1 / xTX1, "0%"))
+            Set fTX1 = fsoTX1.GetFile(filTX1)
+            strdateTX1 = Left(filTX1.Name, 8)
+
+                If InStr(1, filTX1.Name, "PRCallT") <> 0 And strdateTX1 >= mydatestrTX1 Then
+                    sNameTX1 = Replace(filTX1.Name, "PRCallT", "PRCallR")
+                    filTX1.Name = sNameTX1 & ".xml"
+                    AppendTxt (Now() & " - PR Call Tag made ready to process, ticket#: " & sNameTX1)
+                End If
+
+        
+    ' Archives 7 day old files
+            If mydatearTX1 >= fTX1.DateLastModified Then
+                If InStr(1, fTX1, ".xxx") <> 0 Or InStr(1, fTX1, ".Out") <> 0 Then
+                    StrfilTX1 = FolTX1 & "\" & filTX1.Name
+                    'FSOTX1.MoveFile StrfilTX1, "K:\POS Database\upsshare2\UPS\WSTD\ImpExp\XML Auto Import\Archive\"
+                    fsoTX1.CopyFile StrfilTX1, "K:\POS Database\upsshare2\UPS\WSTD\ImpExp\XML Auto Import\Archive\", True
+                    fsoTX1.DeleteFile StrfilTX1
+                    AppendTxt (Now() & " - File Archived: " & StrfilTX1)
+                End If
+            End If
+            YTX1 = YTX1 + 1
+        Next
+        Set fsoTX1 = Nothing
+        varReturnTX1 = SysCmd(acSysCmdSetStatus, " ")
+        AppendTxt (Now() & " - Completed Proccess to Archive Old XML files")
+'end of archive code
+
+'runs and update UPS tracking info
+AppendTxt (Now() & " - Running UPSTrack.exe")
+Dim myPath As String
+myPath = "K:\POS Database\UPSTrack.exe"
+Call Shell(myPath, 1)
+
+'calls a function to update salons (address) table
+
+If Weekday(Date, 2) < 6 Then
+
+        AppendTxt (Now() & " - Started Salon address update process")
+        UpdateSalonAddr
+
+        On Error GoTo ErrHandler:
+        'UPdateVenReport
+        '        AppendTxt (Now() & " - Vendition asset report was run")
+End If
+
+    'updates the out-bound tracking info in servicenow
+    AppendTxt (Now() & " - Started process to push UPS tracking into ServiceNow Incident and Task activity logs")
+    varReturnTX = SysCmd(acSysCmdSetStatus, "Running SQL qry#1... updates the out-bound tracking")
+        
+    strSqlTX = "SELECT [TRACKING#].P_REFERENCE5, [TRACKING#].P_TRACKINGNUMBER, [TRACKING#].UPSTNTDay, [TRACKING#].UPSTNTTime, [TRACKING#].Replicated, [TRACKING#].P_DATEENTERED, [TRACKING#].SI_VOIDINDICATOR, [TRACKING#].SI_RETURNSERVICEOPTION " & vbCrLf & _
+    "FROM [TRACKING#] " & vbCrLf & _
+    "WHERE ((([TRACKING#].P_DATEENTERED) > Date()-7) AND (([TRACKING#].Replicated) is null) AND (([TRACKING#].SI_VOIDINDICATOR)=""N"") AND (([TRACKING#].SI_RETURNSERVICEOPTION)=""N""));"
+
+    Set rsTX = CurrentDb.OpenRecordset(strSqlTX)
+        
+    If rsTX.RecordCount <> 0 Then
+        rsTX.MoveLast
+        stntotTX = rsTX.RecordCount
+        rsTX.MoveFirst
+        LBLcounterTX = 1
+        AppendTxt (Now() & " - Updating Tracking in ServiceNow. Total tickts: " & stntotTX)
+    
+        With rsTX
+            Do While Not .EOF
+                ref5TX = (rsTX.Fields(0))
+                TrackingTX = (rsTX.Fields(1))
+                UPSTNTDay = (rsTX.Fields(2))
+                UPSTNTTime = (rsTX.Fields(3))
+                strisQTX = Left(ref5TX, 1)
+                
+                If UPSTNTDay = "" Or IsNull(UPSTNTDay) Then
+                    UPSTNTDay = "TBD"
+                    UPSTNTTime = "TBD"
+                End If
+                
+                If strisQTX = "Q" Then
+                    tesTX = "RE"
+                    strt00TX = "'" & tesTX & ref5TX & "'"
+                    varReturnTX = SysCmd(acSysCmdSetStatus, "Updateing Order Equipment Tickets " & LBLcounterTX & " Of " & stntotTX)
+                    strSql10TX = "SELECT OAUSER_sc_task.number " & vbCrLf & _
+                    "FROM OAUSER_sc_task " & vbCrLf & _
+                    "WHERE (((OAUSER_sc_task.dv_request)= " & strt00TX & ") AND ((OAUSER_sc_task.description)=""POS Closing Kit"" Or (OAUSER_sc_task.short_description)=""Order Equipment""));"
+      
+                    Set rs10TX = CurrentDb.OpenRecordset(strSql10TX)
+                  
+                    If rs10TX.RecordCount > 0 Then
+                        TaskIDTX = (rs10TX.Fields(0))
+                        stTX = "cmd.exe /c start /D ""K:\POS Database\servicenowpearl"" /High C:\strawberryPerl\perl\bin\wperl.exe Regis_update_Inc_tracking.pl " & """" & TaskIDTX & """" & " " & """" & "UPS" & """" & " " & """" & TrackingTX & """" & " " & """" & UPSTNTDay & """" & " " & """" & UPSTNTTime & """"
+                        Call Shell(stTX, vbHide)
+                    Else
+                        AppendTxt (Now() & " - Error, could not fine ticket#: " & strt00TX)
+                    End If
+        
+                    DoCmd.SetWarnings False
+                    strsqlr1TX = "UPDATE [TRACKING#] SET [TRACKING#].Replicated = 2 " & vbCrLf & _
+                    "WHERE ((([TRACKING#].P_TRACKINGNUMBER)='" & TrackingTX & "'));"
+                    DoCmd.RunSQL strsqlr1TX, dbFailOnError
+                                DoCmd.SetWarnings True
+                    rs10TX.Close
+                    Set rs10TX = Nothing
+                    AppendTxt (Now() & " - updated tracking data for ticket#: " & TaskIDTX)
+                           
+                End If
+
+                LBLcounterTX = LBLcounterTX + 1
+                .MoveNext
+                Loop
+        End With
+    End If
+    rsTX.Close
+    Set rsTX = Nothing
+    
+    AppendTxt (Now() & " - Ended nightly processing")
+    AppendTxt ("---------------------------------------------------------------------------------------------------------------------------------")
+        
+ErrHandler:
+    
+    End If
+Else
+    Me.txtupdatedone = "set to run at 8:00pm"
+End If
+'end of Update ServiceNow tickets (TASK and Inc) with UPS tracking numbers
+
+'Start of UPS XML label creation
+Dim MyTime As String
+Dim strShipToState As String
+Dim RSqryPrint As Variant
+Dim LBLcounter As String
+Dim strShipLabelPrinted As String
+Dim strday As String
+Dim StrCall As String
+Dim strNDA As String
+Dim satdev As String
+Dim strWorktblID As String
+Dim strFileO As String
+Dim ServiceOp As String
+Dim CallTOp As String
+Dim PRCallT As String
+Dim strpbr As String
+Dim strtl As String
+Dim strloo As String
+Dim strCustomerID As String
+Dim strCompanyOrName As String
+Dim strAttention As String
+Dim strAddress1 As String
+Dim strCountryTerritory As String
+Dim strPostalCode As String
+Dim strCityOrTown As String
+Dim strStateProvinceCounty As String
+Dim strTelephone As String
+Dim strResidentialIndicator As String
+Dim strCountry As String
+Dim EloUPSacct As String
+Dim strUPSacct As String
+Dim SearchChar As String
+Dim MyPos As String
+Dim SearchString As String
+Dim EModelstr As String
+Dim over1str As String
+    
+MyTime = time
+Me.lblTime = MyTime
+
+Me.remaining.Value = DLookup("[Count]", "remaining_tickets", "total" = "total")
+Me.Total.Value = DLookup("[Count]", "Open_Tickets", "total" = "total")
+    
+strday = WeekdayName(Weekday(Date))
+
+If Date = "7/3/2014" Then
+    strday = WeekdayName(Weekday(Date + 1))
+End If
+    
+Set RSqryPrint = CurrentDb.OpenRecordset("PrintShipLBL")
+LBLcounter = 1
+RSqryPrint.Sort = "EMODEL ASC"
+    
+With RSqryPrint
+Do While Not .EOF
+                       
+    strReturnLabel = ""
+    strBillOp = ""
+    numofpack = ""
+    EloUPSacct = "859646"
+    strUPSacct = "55526E"
+    strWeight = "1"
+    strItemDisc = ""
+    strPackageLength = "12"
+    strPackageWidth = "12"
+    strPackageHeight = "6"
+    strGoodsTerCode = ""
+    strGoodsCoO = ""
+    strGoodsUnitPrice = "5.00"
+    strShipToAdd1 = ""
+    strShipToAdd2 = ""
+    strShipToZipCode = ""
+    strShipToCity = ""
+    strShipToState = ""
+    strShipToPhoneNumber = "8556973447"
+    strSatPickup = ""
+    strSat = ""
+    strReturnLable1 = ""
+    strMakeLabel = ""
+    strheatid = ""
+    strShipLabelPrinted = ""
+    StrCall = ""
+    strNDA = ""
+    satdev = ""
+    strWorktblID = ""
+    ServiceOp = ""
+    strFileO = ""
+    CallTOp = ""
+    PRCallT = False
+    strpbr = False
+    strtl = ""
+    strCustomerID = ""
+    strCompanyOrName = ""
+    strAttention = ""
+    strAddress1 = ""
+    strCountryTerritory = ""
+    strPostalCode = ""
+    strCityOrTown = ""
+    strStateProvinceCounty = ""
+    strTelephone = ""
+    strResidentialIndicator = ""
+    strloo = 1
+    strCountry = ""
+    SearchChar = "Non-F"
+    MyPos = ""
+    SearchString = "Elo All-In-One, Non-Functional"
+    
+    
+    Dim objFSO As Object
+    Dim objFSO1 As Object
+    Set objFSO = CreateObject("Scripting.FileSystemObject")
+    Set objFSO1 = CreateObject("Scripting.FileSystemObject")
+    
+    strheatid = (RSqryPrint.Fields(0))
+    salonn = (RSqryPrint.Fields(1))
+    StrSKU = (RSqryPrint.Fields(2))
+    StrCall = (RSqryPrint.Fields(3))
+    strWorktblID = (RSqryPrint.Fields(6))
+    ServiceOp = Nz((RSqryPrint.Fields(7)))
+    EModelstr = (RSqryPrint.Fields(9))
+    Stritemnumber = (RSqryPrint.Fields(10))
+    StrJDEuser = Trim((RSqryPrint.Fields(11)))
+    
+    salonntxt = salonn
+        
+    If StrCall = "H" Then
+        GoTo UpdateH
+    End If
+
+
+        DoCmd.SetWarnings False
+        stRSqryUpdate_linkTable = "UPDATE MasterAssetFile_LinkTable SET ReadyToShip = 0 where LinkToAssetMasterFile_LinkParent =" & Stritemnumber & ";"
+        DoCmd.RunSQL stRSqryUpdate_linkTable, dbFailOnError
+        DoCmd.SetWarnings True
+
+
+    If salonn = "70150" Or Nz(DLookup("[emodel]", "CALLS1", "[CALLID] ='" & strheatid & "'"), "") Like "*Opener*" Or ServiceOp = "Other" Then
+        DoCmd.SetWarnings False
+        stRSqryPrintqlupdateCalls = "UPDATE CALLS1 SET SHIPLABELPRINTED = -2 where CALLID ='" & strheatid & "';"
+        DoCmd.RunSQL stRSqryPrintqlupdateCalls, dbFailOnError
+        DoCmd.SetWarnings True
+        GoTo SkipLabel
+    End If
+    
+    strCountry = Nz(DLookup("[Country]", "Salons", "[SalonNumber] =" & salonn), "")
+    
+    ' Alternate Return Address
+    If StrSKU = 550 And [strCountry] = "CA" Then '(For Global CCT Return project)
+       StrCall = "S"
+       strCustomerID = 4
+       strCompanyOrName = "Global Payments Logistics Centre"
+       strAttention = "C/O: Regis Corp/CCT Return"
+       strAddress1 = "151 Carlingview Drive, Unit 16 and 17"
+       strCountryTerritory = "CA"
+       strPostalCode = "M9W 5S4"
+       strCityOrTown = "Toronto"
+       strStateProvinceCounty = "ON"
+       strTelephone = "8002632970"
+       strResidentialIndicator = "N"
+    ElseIf StrSKU = 551 And [strCountry] = "US" Then 'direct return to spacenet (Prysm Pro's) US salon only
+       StrCall = "C"
+       strCustomerID = 44
+       strCompanyOrName = "SAGENET"
+       strAttention = "TED BLIZZARD/MNS GROUP"
+       strAddress1 = "10740 PARKRIDGE BLVD, ROOM 300"
+       strCountryTerritory = "US"
+       strPostalCode = "20191"
+       strCityOrTown = "RESTON"
+       strStateProvinceCounty = "VA"
+       strTelephone = "7038481427"
+       strResidentialIndicator = "N"
+    ElseIf [strCountry] = "CA" Then    'normal return from Canada - to UPS/SCS
+       strCustomerID = 3
+       strCompanyOrName = "UPS Supply Chain Solutions"
+       strAttention = "C/O: Regis POS Returns Dept."
+       strAddress1 = "4150 Mainway"
+       strCountryTerritory = "CA"
+       strPostalCode = "L7L 0A6"
+       strCityOrTown = "Burlington"
+       strStateProvinceCounty = "ON"
+       strTelephone = "8002922991"
+       strResidentialIndicator = "N"
+    Else                                'normal returns from US - to the pos shop
+       strCustomerIDUS = 2
+       strCompanyOrNameUS = "Regis POS Returns Dept"
+       strAttentionUS = "POS Returns"
+       strAddress1US = "4401 West 76th Street"
+       strCountryTerritoryUS = "US"
+       strPostalCodeUS = "55439"
+       strCityOrTownUS = "Edina"
+       strStateProvinceCountyUS = "MN"
+       strTelephoneUS = "8556973447"
+       strResidentialIndicatorUS = "N"
+    End If
+
+    NAtime = time
+    mytimestr = Format(NAtime, "HhNnSs")
+             
+    If StrCall = "C" Then
+       strFileO = strheatid & "_CTO_" & strWorktblID
+    Else
+       strFileO = strheatid
+    End If
+                    
+    Select Case objFSO.FileExists("K:\POS Database\upsshare2\UPS\WSTD\ImpExp\XML Auto Import\" & salonn & " " & strFileO & ".xxx") Or objFSO1.FileExists("K:\POS Database\upsshare2\UPS\WSTD\ImpExp\XML Auto Import\" & salonn & " " & strFileO & ".xml")
+     
+        Case True
+            MyFileExists = True
+            Set objFSO = Nothing
+            Set objFSO1 = Nothing
+            DoCmd.SetWarnings False
+            stRSqryPrintqlupdateCalls = "UPDATE CALLS1 SET SHIPLABELPRINTED = -2 where CALLID ='" & strheatid & "';"
+            DoCmd.RunSQL stRSqryPrintqlupdateCalls, dbFailOnError
+            DoCmd.SetWarnings True
+            GoTo SkipLabel
+        Case False
+             MyFileExists = False
+             Set objFSO = Nothing
+             Set objFSO1 = Nothing
+    End Select
+                        
+    If strday = "Saturday" Then
+        strSatPickup = "Y"
+    Else
+        strSatPickup = "N"
+    End If
+                          
+    If (IsNull(strShipToAdd1 = DLookup("[Address2]", "Salons", "[SalonNumber] =" & salonn))) Then
+        Address1 = Nz(DLookup("[Address1]", "Salons", "[SalonNumber] =" & salonn), "")
+    Else
+        strShipToAdd1 = Nz(DLookup("[Address1]", "Salons", "[SalonNumber] =" & salonn), "")
+        strShipToAdd2 = Nz(DLookup("[Address2]", "Salons", "[SalonNumber] =" & salonn), "")
+    End If
+            
+    If (IsNull(strShipToAdd1)) Then
+        strShipToAdd1 = " "
+    End If
+            
+    strShipToZipCode = Nz(DLookup("[Zip]", "Salons", "[SalonNumber] =" & salonn), "")
+    strShipToCity = Nz(DLookup("[City]", "Salons", "[SalonNumber] =" & salonn), "")
+    strShipToState = Nz(DLookup("[State]", "Salons", "[SalonNumber] =" & salonn), "")
+            
+    If (IsNull(strShipToPhoneNumber = DLookup("[PhoneNumber]", "Salons", "[SalonNumber] =" & salonn))) Then
+        strShipToPhoneNumber = "8556973447"
+    Else
+        strShipToPhoneNumber = DLookup("[PhoneNumber]", "Salons", "[SalonNumber] =" & salonn)
+    End If
+            
+    sName = Nz(DLookup("[SalonName]", "Salons", "[SalonNumber] =" & salonn), "")
+    strCountry = Nz(DLookup("[Country]", "Salons", "[SalonNumber] =" & salonn), "")
+    strItemN = Nz(DLookup("[WFITM]", "JEFXAWRKP", "[WFHeatID] = '" & strheatid & "'"), "")
+    strWeight = Nz(DLookup("[WEIGHT]", "EQUIPMENTLIST", "[ID] =" & strItemN), "")
+    strItemDisc = Nz(DLookup("[DESCRIPTION]", "EQUIPMENTLIST", "[ID] =" & strItemN), "")
+    strPackageLength = Nz(DLookup("[DIM_L]", "EQUIPMENTLIST", "[ID] =" & strItemN), "")
+    strPackageWidth = Nz(DLookup("[DIM_W]", "EQUIPMENTLIST", "[ID] =" & strItemN), "")
+    strPackageHeight = Nz(DLookup("[DIM_H]", "EQUIPMENTLIST", "[ID] =" & strItemN), "")
+    strShipToAdd1 = Replace(strShipToAdd1, "&", "and")
+    strShipToAdd2 = Replace(strShipToAdd2, "&", "and")
+    sName = Replace(sName, "&", "and")
+    CallTOp = "PRL"
+                       
+    strReturnLable1 = DLookup("[NEEDCALLTAG]", "EQUIPMENTLIST", "[ID] =" & strItemN)
+    'strWFCode = DLookup("[WFCODE]", "JEFXAWRKP", "[WFstrHeatID] = '" & strHeatID & "'") 'could be used for rollouts items
+            
+    ServiceType = DLookup("[WFITM]", "JEFXAWRKP", "[WFHEATID] = '" & strheatid & "'")
+    satdev = DLookup("[SHIPPING_OVERNIGHT]", "EQUIPMENTLIST", "[ID] =" & ServiceType)
+                      
+'override for Non-Functional critical items (flips the flag so they are shipped overnight)
+    Mysearchstr = InStr(1, EModelstr, SearchChar, 1)
+    If Mysearchstr > 0 Then
+        satdev = "-1"
+        over1str = "-1"
+    End If
+                      
+    Select Case [strCountry]
+        Case "US"
+            strSat = "N"
+            strReturnLabel = "Ground"
+            strBillOp = "Bill Shipper Freight"
+                            
+            If (IsNull(DLookup("[ST_CITY]", "tblUPS_NDA_Only", "[ST_POSTALZIPCODE] ='" & strShipToZipCode & "'"))) Then 'checks tblUPS_NDA_Only table. if exists will upgreade the shipping servic
+                strNDA = "N"
+            Else
+                strNDA = "Y"
+            End If
+                            
+            'If strNDA = "Y" And satdev = "-1" And strday = "Friday" Then
+            '    strservice = "Next Day Air"
+            '    strSat = "Y"
+                               
+            'If ServiceOp <> "Default" Or ServiceOp <> "Other" Or ServiceOp <> Null Or ServiceOp <> "" Or ServiceOp <> " " Then
+            '    strservice = ServiceOp
+                                    
+            '        If ServiceOp = "Next Day Air" And strday = "Friday" Then
+            '           strSat = "Y"
+            
+            '             If strday = "Saturday" Then
+            '                  strSatPickup = "Y"
+            '             Else
+            '                  strSatPickup = "N"
+            '             End If
+            'End If
+                                    
+            If satdev = "-1" And strday = "Friday" And strShipToState <> "HI" And strShipToState <> "AK" Then
+                strservice = "Next Day Air"
+                strSat = "Y"
+                            
+            ElseIf EModelstr = "CCT Break/Fix" Then ' added for the hot fix CCT rollout 3/24/2016
+                strservice = "2nd Day Air"           ' added for the hot fix CCT rollout 3/24/2016
+                strReturnLabel = "2nd Day Air"       ' added for the hot fix CCT rollout 3/24/2016
+                salonntxt = "POSREP #" & salonntxt   ' added for the hot fix CCT rollout 3/24/2016
+            ElseIf strNDA = "Y" And satdev = "-1" Then
+                strservice = "Next Day Air"
+            'ElseIf strShipToState = "MN" Or strShipToState = "WI" Or strShipToState = "IA" And strday <> "Saturday" And MyTime < "2:30 PM" Then
+            '    strservice = "Ground"
+            'ElseIf strShipToState = "MN" Or strShipToState = "WI" Or strShipToState = "IA" And satdev = "-1" And MyTime >= "2:30 PM" Then
+            '    strservice = "2nd Day Air"
+            ElseIf strShipToState = "HI" Or strShipToState = "AK" Then
+                strReturnLabel = "Next Day Air"
+                strservice = "2nd Day Air"
+                strSat = "N"
+            ElseIf satdev = "-1" Then
+                strservice = "Next Day Air Saver"
+            Else
+                strservice = "Ground"
+            End If
+                                
+        Case "PR"
+            CallTOp = "RS3"
+            strservice = "Next Day Air"
+            strReturnLabel = "Next Day Air"
+            strBillOp = "Bill Duty, Tax and Shipping Charges to Shipper" 'check to see if this is right or needed
+            strGoodsTerCode = Nz(DLookup("[HARMONIZED_TARIFF_NUMBER]", "EQUIPMENTLIST", "[ID] =" & strItemN), "")
+            strGoodsCoO = Nz(DLookup("[COUNTRYOFORIGIN]", "EQUIPMENTLIST", "[ID] =" & strItemN), "")
+            strGoodsUnitPrice = Nz(DLookup("[VALUE]", "EQUIPMENTLIST", "[ID] =" & strItemN), "")
+                               
+        Case Else
+            If satdev = 0 Then
+                strservice = "Standard"
+            Else
+                strservice = "Worldwide Saver (Express)"
+            End If
+            
+            strReturnLabel = "Standard"
+            strBillOp = "Bill Duty, Tax and Shipping Charges to Shipper" 'check to see if this is right or needed
+            strGoodsTerCode = Nz(DLookup("[HARMONIZED_TARIFF_NUMBER]", "EQUIPMENTLIST", "[ID] =" & strItemN), "")
+            strGoodsCoO = Nz(DLookup("[COUNTRYOFORIGIN]", "EQUIPMENTLIST", "[ID] =" & strItemN), "")
+            strGoodsUnitPrice = Nz(DLookup("[VALUE]", "EQUIPMENTLIST", "[ID] =" & strItemN), "")
+        
+    End Select
+              
+    'If ServiceOp <> "" Or IsNull(ServiceOp) Or ServiceOp <> "Default" Then
+    '   strservice = Nz(DLookup("[SHIPMETHOD]", "CALLS1", "[CALLID] = '" & strheatid & "'"), "")
+    '   strSat = ""
+    'End If
+                
+    mydate = Date + 2
+    mydatestr = Format(mydate, "mmddyyyy")
+                
+    tb = Chr(9) 'tab key for output below
+          numofpack = "1"
+
+CalltPR:
+    If PRCallT = True Then
+        Filename = "K:\POS Database\upsshare2\UPS\WSTD\ImpExp\XML Auto Import\" & salonn & " " & strFileO & "PRCallT" & mydatestr
+    ElseIf StrJDEuser = "CJASICKI1" Then
+        Filename = "K:\POS Database\upsshare2\UPS\WSTD\ImpExp\XML Auto Import\RollOut\" & salonn & " " & strFileO & ".XML"
+    Else
+        Filename = "K:\POS Database\upsshare2\UPS\WSTD\ImpExp\XML Auto Import\" & salonn & " " & strFileO & ".XML"
+
+        If strCountry = "PR" Then
+            strReturnLable1 = 0
+        End If
+    End If
+    
+    Open Filename For Output As #1
+    'Print #1, "<?xml version="; 1#; " encoding="; Windows - 1252; " ?>"
+    Print #1, "<OpenShipments xmlns=""x-schema:OpenShipments.xdr"">"
+ 
+'*********************************************************************************************************
+'*********************************************************************************************************
+'*********************************************************************************************************
+
+'The following line will force all outbound labels to be "2nd Day Air" --- REM it out for normal operation
+
+     'strservice = "Next Day Air Saver"
+     'strservice = "2nd Day Air"
+     'strSat = "N"
+
+'*********************************************************************************************************
+'*********************************************************************************************************
+'*********************************************************************************************************
+
+ 
+    'Select Case [StrCall]
+    'Case "S"
+    If StrCall = "S" Then
+        Print #1, tb & "<OpenShipment ShipmentOption="""" ProcessStatus="""">"
+            Print #1, tb & "<Shipment>"
+            Print #1, tb & tb & "<BillingOption>" & strBillOp & "</BillingOption>"
+            Print #1, tb & tb & "<Signature-AdultSignatureRequired>" & "N" & "</Signature-AdultSignatureRequired>"
+            Print #1, tb & "</Shipment>"
+                Print #1, tb & "<ShipTo>"
+                Print #1, tb & tb & "<CustomerID>" & salonn & "</CustomerID>"
+                Print #1, tb & tb & "<CompanyOrName>" & sName & " #" & salonn & "</CompanyOrName>"
+                Print #1, tb & tb & "<Attention>Salon Manager</Attention>"
+                Print #1, tb & tb & "<Address1>" & strShipToAdd2 & "</Address1>"
+                Print #1, tb & tb & "<Address2>" & strShipToAdd1 & "</Address2>"
+                'Print #1, tb & tb & "<Address3 />"
+                Print #1, tb & tb & "<CountryTerritory>" & strCountry & "</CountryTerritory>"
+                Print #1, tb & tb & "<PostalCode>" & Trim(strShipToZipCode) & "</PostalCode>"
+                Print #1, tb & tb & "<CityOrTown>" & strShipToCity & "</CityOrTown>"
+                Print #1, tb & tb & "<StateProvinceCounty>" & strShipToState & "</StateProvinceCounty>"
+                Print #1, tb & tb & "<Telephone>" & strShipToPhoneNumber & "</Telephone>"
+                'Print #1, tb & tb & "<EmailAddress />"
+                Print #1, tb & tb & "<LocationID>" & salonn & "</LocationID>"
+                Print #1, tb & tb & "<ResidentialIndicator>" & "N" & "</ResidentialIndicator>"
+                Print #1, tb & "</ShipTo>"
+                    Print #1, tb & "<ShipFrom>"
+                    Print #1, tb & tb & "<CustomerID>2</CustomerID>"
+                    Print #1, tb & tb & "<CompanyOrName>" & "Regis Corp/POS Repair" & "</CompanyOrName>"
+                    Print #1, tb & tb & "<Attention>Regis POS Returns Dept</Attention>"
+                    Print #1, tb & tb & "<Address1>" & "4401 West 76th Street" & "</Address1>"
+                    'Print #1, tb & tb & "<Address2 />"
+                    'Print #1, tb & tb & "<Address3 />"
+                    Print #1, tb & tb & "<CountryTerritory>" & "US" & "</CountryTerritory>"
+                    Print #1, tb & tb & "<PostalCode>" & "55439" & "</PostalCode>"
+                    Print #1, tb & tb & "<CityOrTown>" & "Edina" & "</CityOrTown>"
+                    Print #1, tb & tb & "<StateProvinceCounty>" & "MN" & "</StateProvinceCounty>"
+                    Print #1, tb & tb & "<Telephone>" & "8556973447" & "</Telephone>"
+                    'Print #1, tb & tb & "<FaxNumber />"
+                    'Print #1, tb & tb & "<TaxIDNumber />"
+                    'Print #1, tb & tb & "<TaxIDType />"
+                    Print #1, tb & tb & "<UpsAccountNumber>" & strUPSacct & "</UpsAccountNumber>"
+                    Print #1, tb & tb & "<ResidentialIndicator>" & "N" & "</ResidentialIndicator>"
+                    'Print #1, tb & tb & "<TariffAirportCode />"
+                    'Print #1, tb & tb & "<SCSAccountNumber />"
+                    Print #1, tb & "</ShipFrom>"
+                  
+        If [strCountry] <> "US" Then
+                    Print #1, tb & "<Importer>"
+                    'Print #1, tb & tb & "<CustomerID />"
+                    Print #1, tb & tb & "<CompanyOrName>Regis Corporation / NRI 38284062</CompanyOrName>"
+                    'Print #1, tb & tb & "<Attention />"
+                    Print #1, tb & tb & "<Address1>7201 Metro Boulevard</Address1>"
+                    Print #1, tb & tb & "<Address2>Minneapolis MN 55439</Address2>"
+                    'Print #1, tb & tb & "<Address3 />"
+                    Print #1, tb & tb & "<CountryTerritory>" & strCountry & "</CountryTerritory>"
+                    Print #1, tb & tb & "<PostalCode>" & Trim(strShipToZipCode) & "</PostalCode>"
+                    Print #1, tb & tb & "<CityOrTown>" & strShipToCity & "</CityOrTown>"
+                    Print #1, tb & tb & "<StateProvinceCounty>" & strShipToState & "</StateProvinceCounty>"
+                    Print #1, tb & tb & "<Telephone>8556973447</Telephone>"
+                    'Print #1, tb & tb & "<TaxIDNumber />"
+                    'Print #1, tb & tb & "<UpsAccountNumber />"
+                    Print #1, tb & "</Importer>"
+        End If
+
+                      Print #1, tb & "<ShipmentInformation>"
+                      Print #1, tb & tb & "<ServiceType>" & strservice & "</ServiceType>"
+                      'Print #1, tb & tb & "<ServiceType>2nd Day Air</ServiceType>"
+                      Print #1, tb & tb & "<NumberOfPackages>" & numofpack & "</NumberOfPackages>"
+                      Print #1, tb & tb & "<DescriptionOfGoods>Point of Sale Computer Hardware</DescriptionOfGoods>"
+                      Print #1, tb & tb & "<SpecialInstructionForShipment>Deliver to Front Reception Desk of Salon</SpecialInstructionForShipment>"
+                      Print #1, tb & tb & "<ShipperNumber>" & strUPSacct & "</ShipperNumber>"
+                      Print #1, tb & tb & "<BillingOption>PP</BillingOption>"
+                      Print #1, tb & tb & "<BillTransportationTo>Shipper</BillTransportationTo>"
+                      Print #1, tb & tb & "<BillDutyTaxTo>Shipper</BillDutyTaxTo>"
+                      Print #1, tb & tb & "<SaturdayDelivery>" & strSat & "</SaturdayDelivery>"
+                      Print #1, tb & tb & "<SaturdayPickUp>" & strSatPickup & "</SaturdayPickUp>"
+                      Print #1, tb & "</ShipmentInformation>"
+                        Print #1, tb & "<Package>"
+                        Print #1, tb & tb & "<PackageType>Package</PackageType>"
+                        'Print #1, tb & tb & "<Endorsement />"
+                        Print #1, tb & tb & "<Weight>" & strWeight & "</Weight>"
+                        'Print #1, tb & tb & "<TrackingNumber />"
+                        Print #1, tb & tb & "<USPSDeliveryConfirmationOption />"
+                        'Print #1, tb & tb & "<USPSNumber />"
+                        'Print #1, tb & tb & "<LargePackageIndicator />"
+                        Print #1, tb & tb & "<Reference1>" & salonntxt & "</Reference1>"
+                        Print #1, tb & tb & "<Reference2>" & Trim(strItemDisc) & "</Reference2>"
+                        'Print #1, tb & tb & "<Reference3 />"
+                        'Print #1, tb & tb & "<Reference4 />"
+                        Print #1, tb & tb & "<Reference5>" & strheatid & "</Reference5>"
+                        'Print #1, tb & tb & "<AdditionalHandlingOption />"
+                        'Print #1, tb & tb & "<ShipperReleaseOption />"
+                        'Print #1, tb & tb & "<COD />"
+                        'Print #1, tb & tb & "<DeclaredValue />"
+                        'Print #1, tb & tb & "<DeliveryConfirmation />"
+                        'Print #1, tb & tb & "<QVNOrReturnNotificationOption />"
+                        'Print #1, tb & tb & "<VerbalConfirmationOption />"
+                        Print #1, tb & tb & "<DangerousGoodsOption>N</DangerousGoodsOption>"
+                        Print #1, tb & tb & "<Length>" & strPackageLength & "</Length>"
+                        Print #1, tb & tb & "<Width>" & strPackageWidth & "</Width>"
+                        Print #1, tb & tb & "<Height>" & strPackageHeight & "</Height>"
+                        Print #1, tb & tb & "<MerchandiseDescription>" & Trim(strItemDisc) & "</MerchandiseDescription>"
+                        'Print #1, tb & tb & "<PostalSubclass />"
+                        'Print #1, tb & tb & "<NonmachinableIndicator />"
+                        'Print #1, tb & tb & "<BalloonIndicator />"
+                        'Print #1, tb & tb & "<OversizeIndicator />"
+                        'Print #1, tb & tb & "<ProactiveResponseOption />"
+                        'Print #1, tb & tb & "<RefrigerationOption />"
+                        Print #1, tb & "</Package>"
+                         If [strCountry] <> "US" Then
+                          Print #1, tb & "<InternationalDocumentation>"
+                          Print #1, tb & tb & "<InvoiceImporterSameAsShipTo>Y</InvoiceImporterSameAsShipTo>"
+                          Print #1, tb & tb & "<InvoiceTermOfSale>FOB</InvoiceTermOfSale>"
+                          Print #1, tb & tb & "<InvoiceReasonForExport>Repair</InvoiceReasonForExport>"
+                          Print #1, tb & tb & "<InvoiceDeclarationStatement>Invoice</InvoiceDeclarationStatement>"
+                          Print #1, tb & tb & "<InvoiceAdditionalComments>RMA - Replacing Defective Item</InvoiceAdditionalComments>"
+                          Print #1, tb & tb & "<InvoiceCurrencyCode>USD</InvoiceCurrencyCode>"
+                          'Print #1, tb & tb & "<InvoiceDiscount />"
+                          'Print #1, tb & tb & "<InvoiceChargesFreight />"
+                          'Print #1, tb & tb & "<InvoiceChargesInsurance />"
+                          'Print #1, tb & tb & "<InvoiceChargesOther />"
+                          'Print #1, tb & tb & "<InvoiceLineTotal />"
+                          'Print #1, tb & tb & "<CustomsValueTotal />"
+                          'Print #1, tb & tb & "<CustomsValueCurrencyCode />"
+                          'Print #1, tb & tb & "<CustomsValueOrigin />"
+                          'Print #1, tb & tb & "<SED-Code />"
+                          'Print #1, tb & tb & "<SED-PartiesToTransaction />"
+                          'Print #1, tb & tb & "<SED-UltimateConsigneeSameAsShipTo />"
+                          'Print #1, tb & tb & "<SED-CountryTerritoryOfUltimateDestination />"
+                          'Print #1, tb & tb & "<SED-AESTransactionNumber />"
+                          'Print #1, tb & tb & "<SED-AESTransactionNumberType />"
+                          'Print #1, tb & tb & "<SED-RoutedTransaction />"
+                          'Print #1, tb & tb & "<SED-CurrencyConversion />"
+                          'Print #1, tb & tb & "<SED-ExportCode />"
+                          'Print #1, tb & tb & "<CO-UPSPrepare-CO />"
+                          'Print #1, tb & tb & "<CO-OwnerOrAgent />"
+                          'Print #1, tb & tb & "<NAFTA-Producer />"
+                          'Print #1, tb & tb & "<NAFTA-BlanketPeriodStart />"
+                          'Print #1, tb & tb & "<NAFTA-BlanketPeriodEnd />"
+                          'Print #1, tb & tb & "<CN22GoodsType />"
+                          'Print #1, tb & tb & "<CN22GoodsTypeOtherDescription />"
+                          Print #1, tb & "</InternationalDocumentation>"
+                            Print #1, tb & "<Goods>"
+                            Print #1, tb & tb & "<PartNumber>" & strItemN & "</PartNumber>"
+                            Print #1, tb & tb & "<DescriptionOfGood>" & Trim(strItemDisc) & "</DescriptionOfGood>"
+                            Print #1, tb & tb & "<Inv-NAFTA-TariffCode>" & strGoodsTerCode & "</Inv-NAFTA-TariffCode>"
+                            Print #1, tb & tb & "<Inv-NAFTA-CO-CountryTerritoryOfOrigin>" & strGoodsCoO & "</Inv-NAFTA-CO-CountryTerritoryOfOrigin>"
+                            Print #1, tb & tb & "<InvoiceUnits>" & "1" & "</InvoiceUnits>"
+                            Print #1, tb & tb & "<InvoiceUnitOfMeasure>Each</InvoiceUnitOfMeasure>"
+                            Print #1, tb & tb & "<Invoice-SED-UnitPrice>" & strGoodsUnitPrice & "</Invoice-SED-UnitPrice>"
+                            Print #1, tb & tb & "<InvoiceCurrencyCode>USD</InvoiceCurrencyCode>"
+                            'Print #1, tb & tb & "<InvoiceNetWeight />"
+                            'Print #1, tb & tb & "<SED-CO-GrossWeight />"
+                            'Print #1, tb & tb & "<SED-LbsOrKgs />"
+                            'Print #1, tb & tb & "<SED-PrintGoodOn-SED />"
+                            'Print #1, tb & tb & "<Invoice-SED-CO-MarksAndNumbers />"
+                            'Print #1, tb & tb & "<SED-ScheduleBNumber />"
+                            'Print #1, tb & tb & "<SED-ScheduleBUnits1 />"
+                            'Print #1, tb & tb & "<SED-ScheduleBUnits2 />"
+                            'Print #1, tb & tb & "<SED-UnitsOfMeasure1 />"
+                            'Print #1, tb & tb & "<SED-UnitsOfMeasure2 />"
+                            'Print #1, tb & tb & "<SED-ECCN />"
+                            'Print #1, tb & tb & "<SED-Exception />"
+                            'Print #1, tb & tb & "<SED-LicenceNumber />"
+                            'Print #1, tb & tb & "<SED-LicenceNumberExpirationDate />"
+                            'Print #1, tb & tb & "<NAFTA-PrintGoodOn-NAFTA />"
+                            'Print #1, tb & tb & "<NAFTA-PreferenceCriterion />"
+                            'Print #1, tb & tb & "<NAFTA-Producer />"
+                            'Print #1, tb & tb & "<NAFTA-MultipleCountriesTerritoriesOfOrigin />"
+                            'Print #1, tb & tb & "<NAFTA-NetCostMethod />"
+                            'Print #1, tb & tb & "<NAFTA-NetCostPeriodStartDate />"
+                            'Print #1, tb & tb & "<NAFTA-NetCostPeriodEndDate />"
+                            'Print #1, tb & tb & "<CO-PrintGoodOn-CO />"
+                            'Print #1, tb & tb & "<CO-NumberOfPackageContainingGood />"
+                            'Print #1, tb & tb & "<DFM />"
+                            'Print #1, tb & tb & "<SLI-PrintGoodOn-SLI />"
+                            Print #1, tb & "</Goods>"
+                            End If
+            Print #1, tb & "</OpenShipment>"
+          End If
+'Creates Return Lable XML file)
+
+              If StrCall = "C" Then
+                  strReturnLable1 = -1
+              End If
+
+              Select Case [strReturnLable1]
+                          
+                Case -1 'true
+                     Print #1, "<OpenShipment ShipmentOption=""RS""" & " ProcessStatus=" & Chr(34) & Chr(34) & ">"
+                     Print #1, tb & "<Shipment>"
+                     Print #1, tb & tb & "<BillingOption>" & strBillOp & "</BillingOption>"
+                     Print #1, tb & tb & "<Signature-AdultSignatureRequired>N</Signature-AdultSignatureRequired>"
+                     Print #1, tb & tb & "<ReturnService />"
+                     
+                     'Updated on 1/3/2017 - needed to remove 3rd pary billing to Elo UPS account
+                      'If [strCountry] = "CA" Or strItemN = "20006202" Then
+                      
+                      If [strCountry] = "CA" Then
+                       Print #1, tb & tb & "<ThirdParty />"
+                      End If
+                        Print #1, tb & "</Shipment>"
+                      
+                        Print #1, tb & "<ShipTo>"
+                        Print #1, tb & tb & "<CustomerID>" & salonn & "</CustomerID>"
+                        Print #1, tb & tb & "<CompanyOrName>" & sName & " #" & salonn & "</CompanyOrName>"
+                        Print #1, tb & tb & "<Attention>Salon Manager</Attention>"
+                       
+                          If (IsNull(strShipToAdd2)) Then
+                             Print #1, tb & tb & "<Address1>" & strShipToAdd2 & "</Address1>"
+                          Else
+                             Print #1, tb & tb & "<Address1>" & strShipToAdd2 & "</Address1>"
+                             Print #1, tb & tb & "<Address2>" & strShipToAdd1 & "</Address2>"
+                          End If
+                       
+                       'Print #1, tb & tb & "<Address3 />"
+                       Print #1, tb & tb & "<CountryTerritory>" & strCountry & "</CountryTerritory>"
+                       Print #1, tb & tb & "<PostalCode>" & Trim(strShipToZipCode) & "</PostalCode>"
+                       Print #1, tb & tb & "<CityOrTown>" & strShipToCity & "</CityOrTown>"
+                       Print #1, tb & tb & "<StateProvinceCounty>" & strShipToState & "</StateProvinceCounty>"
+                       Print #1, tb & tb & "<Telephone>" & strShipToPhoneNumber & "</Telephone>"
+                       'Print #1, tb & tb & "<EmailAddress />"
+                       Print #1, tb & tb & "<LocationID>" & salonn & "</LocationID>"
+                       Print #1, tb & tb & "<ResidentialIndicator>N</ResidentialIndicator>"
+                       Print #1, tb & "</ShipTo>"
+                       
+                       'Canada Return Information
+                        'If [strCountry] = "CA" Then
+                         Print #1, tb & "<ShipFrom>"
+                         Print #1, tb & tb & "<CustomerID>" & strCustomerID & "</CustomerID>"
+                         Print #1, tb & tb & "<CompanyOrName>" & strCompanyOrName & "</CompanyOrName>"
+                         Print #1, tb & tb & "<Attention>" & strAttention & "</Attention>"
+                         Print #1, tb & tb & "<Address1>" & strAddress1 & "</Address1>"
+                         'Print #1, tb & tb & "<Address2 />"
+                         'Print #1, tb & tb & "<Address3 />"
+                         Print #1, tb & tb & "<CountryTerritory>" & strCountryTerritory & "</CountryTerritory>"
+                         Print #1, tb & tb & "<PostalCode>" & strPostalCode & "</PostalCode>"
+                         Print #1, tb & tb & "<CityOrTown>" & strCityOrTown & "</CityOrTown>"
+                         Print #1, tb & tb & "<StateProvinceCounty>" & strStateProvinceCounty & "</StateProvinceCounty>"
+                         Print #1, tb & tb & "<Telephone>" & strTelephone & "</Telephone>"
+                         'Print #1, tb & tb & "<FaxNumber />"
+                         'Print #1, tb & tb & "<TaxIDNumber />"
+                         'Print #1, tb & tb & "<TaxIDType />"
+                         Print #1, tb & tb & "<UpsAccountNumber>" & strUPSacct & "</UpsAccountNumber>"
+                         Print #1, tb & tb & "<ResidentialIndicator>" & strResidentialIndicator & "</ResidentialIndicator>"
+                         'Print #1, tb & tb & "<TariffAirportCode />"
+                         'Print #1, tb & tb & "<SCSAccountNumber />"
+                         Print #1, tb & "</ShipFrom>"
+                         
+                          If [strCountry] = "CA" Then
+                           Print #1, tb & "<ThirdParty>"
+                           'Print #1, tb & tb & "<CustomerID />"
+                           'Print #1, tb & tb & "<CompanyName />"
+                           Print #1, tb & tb & "<CompanyOrName>Regis Canada</CompanyOrName>"
+                           'Print #1, tb & tb & "<ContactPerson />"
+                           Print #1, tb & tb & "<Attention>Regis</Attention>"
+                           Print #1, tb & tb & "<Address1>6465 Millcreek Drive, #200</Address1>"
+                           Print #1, tb & tb & "<CityOrTown>Mississauga</CityOrTown>"
+                           Print #1, tb & tb & "<CountryTerritory>CA</CountryTerritory>"
+                           Print #1, tb & tb & "<PostalCode>L5N5R6</PostalCode>"
+                           Print #1, tb & tb & "<StateProvinceCounty>ON</StateProvinceCounty>"
+                           Print #1, tb & tb & "<Telephone>9529184801</Telephone>"
+                           Print #1, tb & tb & "<UpsAccountNumber>1W756A</UpsAccountNumber>"
+                           Print #1, tb & "</ThirdParty>"
+                          End If
+                        
+'new code 5/6/2015 - stopped on 12/30/2016, end of warranty program
+                        'ElseIf strItemN = "20006202" Then
+                         '  Print #1, tb & "<ThirdParty>"
+                           'Print #1, tb & tb & "<CustomerID />"
+                           'Print #1, tb & tb & "<CompanyName />"
+                         '  Print #1, tb & tb & "<CompanyOrName>Elo Touch Solutions</CompanyOrName>"
+                           'Print #1, tb & tb & "<ContactPerson />"
+                         '  Print #1, tb & tb & "<Attention>Regis Elo Returns</Attention>"
+                         '  Print #1, tb & tb & "<Address1>1033 McCarthy Blvd</Address1>"
+                         '  Print #1, tb & tb & "<CityOrTown>Milpitas</CityOrTown>"
+                         '  Print #1, tb & tb & "<CountryTerritory>US</CountryTerritory>"
+                         '  Print #1, tb & tb & "<PostalCode>95035</PostalCode>"
+                         '  Print #1, tb & tb & "<StateProvinceCounty>CA</StateProvinceCounty>"
+                         '  Print #1, tb & tb & "<Telephone>8003568682</Telephone>"
+                         '  Print #1, tb & tb & "<UpsAccountNumber>859646</UpsAccountNumber>"
+                         '  Print #1, tb & "</ThirdParty>"
+                           
+                        
+'new code 5/6/2015
+                           
+                        'Else
+                          'Print #1, tb & "<ShipFrom>"
+                          'Print #1, tb & tb & "<CustomerID>2</CustomerID>"
+                          'Print #1, tb & tb & "<CompanyOrName>Regis POS Returns Dept</CompanyOrName>"
+                          'Print #1, tb & tb & "<Attention>Regis POS Returns Dept</Attention>"
+                          'Print #1, tb & tb & "<Address1>4401 West 76th Street</Address1>"
+                          'Print #1, tb & tb & "<Address2 />"
+                          'Print #1, tb & tb & "<Address3 />"
+                          'Print #1, tb & tb & "<CountryTerritory>US</CountryTerritory>"
+                          'Print #1, tb & tb & "<PostalCode>55439</PostalCode>"
+                          'Print #1, tb & tb & "<CityOrTown>Edina</CityOrTown>"
+                          'Print #1, tb & tb & "<StateProvinceCounty>MN</StateProvinceCounty>"
+                          'Print #1, tb & tb & "<Telephone>8556973447</Telephone>"
+                          'Print #1, tb & tb & "<FaxNumber />"
+                          'Print #1, tb & tb & "<TaxIDNumber />"
+                          'Print #1, tb & tb & "<TaxIDType />"
+                          'Print #1, tb & tb & "<UpsAccountNumber>" & strUPSacct & "</UpsAccountNumber>"
+                          'Print #1, tb & tb & "<ResidentialIndicator>N</ResidentialIndicator>"
+                          'Print #1, tb & tb & "<TariffAirportCode />"
+                          'Print #1, tb & tb & "<SCSAccountNumber />"
+                          'Print #1, tb & "</ShipFrom>"
+                         'End If
+                         
+                           Print #1, tb & "<ShipmentInformation>"
+                           Print #1, tb & tb & "<ServiceType>" & strReturnLabel & "</ServiceType>"
+                           'Print #1, tb & tb & "<ServiceType>2nd Day Air</ServiceType>"
+                           Print #1, tb & tb & "<ServiceType> </ServiceType>"
+                           Print #1, tb & tb & "<PackageType>Package</PackageType>"
+                           Print #1, tb & tb & "<NumberOfPackages>" & numofpack & "</NumberOfPackages>"
+                           Print #1, tb & tb & "<ShipmentActualWeight>" & strWeight & "</ShipmentActualWeight>"
+                           Print #1, tb & tb & "<DescriptionOfGoods> Point of Sale Computer Hardware</DescriptionOfGoods>"
+                           'Print #1, tb & tb & "<DeliveryConfirmation />"
+                           Print #1, tb & tb & "<Reference1>" & salonntxt & "</Reference1>"
+                           Print #1, tb & tb & "<Reference2>" & Trim(strItemDisc) & "</Reference2>"
+                           Print #1, tb & tb & "<Reference5>" & strheatid & "</Reference5>"
+                           Print #1, tb & tb & "<SpecialInstructionForShipment></SpecialInstructionForShipment>"
+                           Print #1, tb & tb & "<ShipperNumber>" & strUPSacct & "</ShipperNumber>"
+                           Print #1, tb & tb & "<BillingOption>PP</BillingOption>"
+                           
+                             If [strCountry] = "CA" Then
+                               Print #1, tb & tb & "<BillTransportationTo>" & "Third Party" & "</BillTransportationTo>"
+                            'udpated 1/3/2017 - end of Elo warranty return using 3rd party billing
+                             'ElseIf strItemN = "20006202" Then
+                              ' Print #1, tb & tb & "<BillTransportationTo>" & "Third Party" & "</BillTransportationTo>"
+                             Else
+                               Print #1, tb & tb & "<BillTransportationTo>" & "Shipper" & "</BillTransportationTo>"
+                             End If
+                             
+                           Print #1, tb & tb & "<BillDutyTaxTo>" & "Shipper" & "</BillDutyTaxTo>"
+                           Print #1, tb & "<ReturnService>"
+                           Print #1, tb & tb & "<Options>" & CallTOp & "</Options>"
+                           Print #1, tb & tb & "<MerchandiseDescOfPackage>" & Trim(strItemDisc) & "</MerchandiseDescOfPackage>"
+                           Print #1, tb & "</ReturnService>"
+                           Print #1, tb & "</ShipmentInformation>"
+                     Print #1, tb & "</OpenShipment>"
+                   Print #1, "</OpenShipments>"
+                   
+                  If StrCall = "C" And (IsNull(test = DLookup("[CALLTAG] ", "CALLS1", "[CALLID]= '" & strheatid & "'"))) And strCountry <> "PR" Then
+                     DoCmd.OpenReport "AddressLabel", acViewNormal, , "SalonNumber = " & salonn, , Trim(strItemDisc)
+                  ElseIf StrSKU = 551 And [strCountry] = "US" Then 'direct return to spacenet (Prysm Pro's) US salon only
+                     DoCmd.OpenReport "AddressLabel", acViewNormal, , "SalonNumber = " & salonn, , Trim(strItemDisc)
+                  End If
+                  
+                  Case Else 'False - no call tag is needed
+           Print #1, "</OpenShipments>"
+         End Select
+         
+                Close #1
+               
+            If strCountry = "PR" And StrCall = "S" And strloo = 1 Then
+            strloo = strloo + 1
+            PRCallT = True
+            StrCall = "C"
+            GoTo CalltPR
+            End If
+                               
+            LBLcounter = LBLcounter + 1
+            Me.sentprinter.Value = Me.sentprinter + 1
+UpdateH:
+                  'udpates the shipped field in the calls table to true, but not for call tags
+                  If StrCall = "S" Then
+                    DoCmd.SetWarnings False
+                    stRSqryPrintqlupdateCalls = "UPDATE CALLS1 SET SHIPLABELPRINTED = -1 where CALLID ='" & strheatid & "';"
+                    DoCmd.RunSQL stRSqryPrintqlupdateCalls, dbFailOnError
+                    DoCmd.SetWarnings True
+                  ElseIf StrCall = "C" Then
+                    DoCmd.SetWarnings False
+                    stRSqryPrintqlupdateCalls = "UPDATE CALLS1 SET CALLTAG = 1 where CALLID ='" & strheatid & "';"
+                    DoCmd.RunSQL stRSqryPrintqlupdateCalls, dbFailOnError
+                    DoCmd.SetWarnings True
+                  End If
+  ' new 1/10/2018
+   If StrSKU <> 540 Then
+  ' new 1/10/2018
+        strisQ = Left(strheatid, 1)
+        If strisQ = "Q" Then
+               tes = "RE"
+               strt00 = "'" & tes & strheatid & "'"
+    
+                  strSql = "SELECT OAUSER_sc_task.number " & vbCrLf & _
+                  "FROM OAUSER_sc_task " & vbCrLf & _
+                  "WHERE (((OAUSER_sc_task.dv_request)= " & strt00 & ") AND ((OAUSER_sc_task.description)=""POS Closing Kit"" Or (OAUSER_sc_task.short_description)=""Order Equipment""));"
+                  Set rs1 = CurrentDb.OpenRecordset(strSql)
+                  
+                  TaskID = (rs1.Fields(0))
+                  
+                  If StrCall = "C" Then
+                     st = "cmd.exe /c start /D ""K:\POS Database\servicenowpearl"" C:\strawberryPerl\perl\bin\wperl.exe Regis_update_snrequest_item.pl " & """" & TaskID & """" & " " & """" & "UPS Return Service Label (Call Tag) will be mailed via the US Post Office to the salon for...." & """" & " " & """" & Trim(strItemDisc) & """"
+                     Call Shell(st, vbHide)
+                  Else
+                     st = "cmd.exe /c start /D ""K:\POS Database\servicenowpearl"" C:\strawberryPerl\perl\bin\wperl.exe Regis_update_snrequest_item.pl " & """" & TaskID & """" & " " & """" & "The following item was picked for shipment...." & """" & " " & """" & Trim(strItemDisc) & " and is being shipped via UPS " & [strservice] & """"
+                     Call Shell(st, vbHide)
+                  End If
+                  
+                rs1.Close
+                Set rs1 = Nothing
+                strservicen = Me.servicn.Value + 1
+                Me.servicn.Value = strservicen
+                             
+               'closes the return ticket if a return label was not printed
+               If strReturnLable1 = 0 Or StrCall = "H" Then
+                   strSql8 = "SELECT number FROM OAUSER_sc_task WHERE dv_request= " & strt00 & " and description = ""Please verify the equipment was received."""
+                   'strSql8 = "SELECT number FROM OAUSER_sc_task WHERE dv_request= " & strt00 & " and description = ""Nothing to be returned and closing task"""
+             
+                   Set rs18 = CurrentDb.OpenRecordset(strSql8)
+                   TaskID8 = (rs18.Fields(0))
+                      st8 = "cmd.exe /c start /D ""K:\POS Database\servicenowpearl"" C:\strawberryPerl\perl\bin\wperl.exe Regis_close_sncattask.pl " & """" & TaskID8 & """" & " " & """" & "Item Ordered... " & Trim(strItemDisc) & " - Return of Replaced Item is Not Required" & """" & " " & " " & """3"""
+                      Call Shell(st8, vbHide)
+                   rs18.Close
+                   Set rs18 = Nothing
+                End If
+                
+        End If
+
+'New 1/10/2018
+End If
+'New 1/10/2018
+
+SkipLabel:
+    .MoveNext
+    Loop
+End With
+
+RSqryPrint.Close
+Set RSqryPrint = Nothing
+        
+enda:
+
+'closes service-now tickets - if item was returned
+strSqlreturns = "SELECT  USPRGDTA_JEFXAARCP.ID, USPRGDTA_JEFXAARCP.WFHEATID, EQUIPMENTLIST.DESCRIPTION, USPRGDTA_JEFXAARCP.WFUSER, USPRGDTA_JEFXAARCP.WFITM, USPRGDTA_JEFXAARCP.WFDATE, USPRGDTA_JEFXAARCP.WFCODE, USPRGDTA_JEFXAARCP.WFEDSP " & vbCrLf & _
+"FROM USPRGDTA_JEFXAARCP INNER JOIN EQUIPMENTLIST ON USPRGDTA_JEFXAARCP.WFITM = EQUIPMENTLIST.ID " & vbCrLf & _
+"WHERE (((USPRGDTA_JEFXAARCP.WFHEATID)<>"""") AND ((USPRGDTA_JEFXAARCP.WFDATE)>=Format(Date(),""yyyymmdd"")) AND ((USPRGDTA_JEFXAARCP.WFCODE)=""R"") AND ((USPRGDTA_JEFXAARCP.WFEDSP)<>2));"
+
+Set rs = CurrentDb.OpenRecordset(strSqlreturns)
+
+    LBLcounter = 0
+    
+    With rs
+    Do While Not .EOF
+        strtblID = (rs.Fields(0))
+        strCallID = (rs.Fields(1))
+        strDisc = (rs.Fields(2))
+        strUser = (rs.Fields(3))
+
+        strCallIDQ = Left(strCallID, 1)
+
+        If strCallIDQ = "Q" Then
+            tes = "RE"
+            strt00 = "'" & tes & strCallID & "'"
+             
+            strSql10 = "SELECT OAUSER_sc_task.number " & vbCrLf & _
+            "FROM OAUSER_sc_task " & vbCrLf & _
+            "WHERE (((OAUSER_sc_task.dv_request)= " & strt00 & ") AND ((OAUSER_sc_task.short_description)=""POS Closing Kit"" Or (OAUSER_sc_task.short_description)=""Equipment Received""));"
+            'strSql10 = "SELECT number FROM OAUSER_sc_task WHERE dv_request= " & strt00 & " and description = ""Please verify the equipment was received."""
+            Set rs10 = CurrentDb.OpenRecordset(strSql10)
+                  
+                If rs10.RecordCount > 0 Then
+       
+                    TaskID = (rs10.Fields(0))
+
+                    st = "cmd.exe /c start /D ""K:\POS Database\servicenowpearl"" C:\strawberryPerl\perl\bin\wperl.exe Regis_close_sncattask.pl " & """" & TaskID & """" & " " & """" & "The following item was return.... " & strDisc & " On: " & Date & " by  " & strUser & """" & " " & " " & """3"""
+                    Call Shell(st, vbHide)
+                    
+                    rs10.Close
+                    Set rs10 = Nothing
+                Else
+                     AppendTxt ("Error, could not fine ticket#: " & strCallID)
+                 End If
+
+             DoCmd.SetWarnings False
+             strsqlr1 = "UPDATE USPRGDTA_JEFXAARCP SET USPRGDTA_JEFXAARCP.WFEDSP = 2 " & vbCrLf & _
+             "WHERE (((USPRGDTA_JEFXAARCP.ID)=" & strtblID & "));"
+             DoCmd.RunSQL strsqlr1, dbFailOnError
+             DoCmd.SetWarnings True
+             
+        End If
+
+   LBLcounter = LBLcounter + 1
+    .MoveNext
+    Loop
+    End With
+rs.Close
+Set rs = Nothing
+
+     ' Me.Requery
+    
+End Sub
