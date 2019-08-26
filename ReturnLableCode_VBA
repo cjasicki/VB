@@ -1,0 +1,163 @@
+Option Compare Database
+
+Function ReturnLBL()
+
+Dim JEFXAWRKP_ID
+
+Set RSqryPrintD = CurrentDb.OpenRecordset("CJ100_KB_LB")
+LBLcounter = 1
+    
+With RSqryPrintD
+Do While Not .EOF
+
+    JEFXAWRKP_ID = (RSqryPrintD.Fields(0))
+    salonn = (RSqryPrintD.Fields(1))
+    StrSKU = (RSqryPrintD.Fields(2))
+    WFUSER = (RSqryPrintD.Fields(9))
+
+On Error Resume Next
+
+    DoCmd.OpenReport "CJ100_reportedDefect", acViewNormal, , "ID = " & JEFXAWRKP_ID
+    
+sSQL = "INSERT INTO JEFXAWRKP_LinkTable (LinkToWRKP,ReasonTk) " & vbCrLf & _
+"VALUES (" & JEFXAWRKP_ID & ",1);"
+
+DoCmd.SetWarnings False
+DoCmd.RunSQL sSQL
+DoCmd.SetWarnings True
+   
+    .MoveNext
+    Loop
+End With
+
+RSqryPrintD.Close
+Set RSqryPrintD = Nothing
+
+End Function
+
+Function Counttall(strSN1 As String) As String
+'Finds out how many times the time has been deployed
+Dim strSqlDC
+Trim (strSN1)
+
+SqlDC = "SELECT USPRGDTA_JEFXAARCP.WFCODE, USPRGDTA_JEFXAARCP.WFSRLN, Count(USPRGDTA_JEFXAARCP.WFSRLN) " & vbCrLf & _
+"FROM USPRGDTA_JEFXAARCP " & vbCrLf & _
+"GROUP BY USPRGDTA_JEFXAARCP.WFCODE, USPRGDTA_JEFXAARCP.WFSRLN " & vbCrLf & _
+"HAVING (((USPRGDTA_JEFXAARCP.WFCODE)=""S"") AND ((USPRGDTA_JEFXAARCP.WFSRLN)= '" & strSN1 & "'));"
+
+Set sqlDD = CurrentDb.OpenRecordset(SqlDC)
+
+If sqlDD.RecordCount > 0 Then
+Counttall = (sqlDD.Fields(2))
+Else
+Counttall = 0
+End If
+Set sqlDD = Nothing
+End Function
+
+Function CounttSN(strSNow As String) As String
+
+'Checks for mutiple asset records for one serial number
+Dim strSqlSNo
+
+SqlSnow = "SELECT JDRFILES_F1201.FAEXR " & vbCrLf & _
+"FROM JDRFILES_F1201 " & vbCrLf & _
+"WHERE (((JDRFILES_F1201.FAEXR)='" & strSNow & "'));"
+
+Set sqlSno = CurrentDb.OpenRecordset(SqlSnow)
+
+
+If sqlSno.RecordCount > 0 Then
+sqlSno.MoveLast
+CounttSN = sqlSno.RecordCount
+Else
+CounttSN = 0
+End If
+Set sqlSno = Nothing
+
+End Function
+
+
+Function FuF1202(strFuF As String) As String
+
+'Checks 1202 file if asset exists
+Dim strSqlSNo
+
+SqlF = "SELECT JDRFILES_F1202.FLNUMB " & vbCrLf & _
+"FROM JDRFILES_F1202 " & vbCrLf & _
+"WHERE (((JDRFILES_F1202.FLNUMB)=" & strFuF & "));"
+
+Set sqlFuF = CurrentDb.OpenRecordset(SqlF)
+
+If sqlFuF.RecordCount > 0 Then
+Else
+FuF1202 = "1202 File Error"
+End If
+Set sqlFuF = Nothing
+
+End Function
+
+Function rgmall(strgmall, strID) As String
+
+'function removed from lable on 7/24/2018, not needed
+
+Sqlmall = "SELECT RegentMalls.salon" & vbCrLf & _
+"FROM RegentMalls " & vbCrLf & _
+"WHERE (((RegentMalls.salon)=" & strgmall & "));"
+
+Set sqlm = CurrentDb.OpenRecordset(Sqlmall)
+
+If sqlm.RecordCount > 0 Then
+rgmall = "Mall"
+Else
+End If
+Set sqlm = Nothing
+
+End Function
+
+Function INCRES(strINCRES As String) As String
+
+SqlINCRES = "SELECT OAUSER_incident.number, OAUSER_incident.short_description" & vbCrLf & _
+"FROM OAUSER_incident " & vbCrLf & _
+"WHERE (((OAUSER_incident.number)= '" & strINCRES & "'));"
+
+Set sqlI = CurrentDb.OpenRecordset(SqlINCRES)
+
+If sqlI.RecordCount > 0 Then
+INCRES = (sqlI.Fields(1))
+Else
+End If
+Set sqlI = Nothing
+
+
+End Function
+
+Function kbar(strINCRES2 As String) As String
+
+sqlINCRES2 = "SELECT OAUSER_incident.number, OAUSER_incident.dv_u_kb_article" & vbCrLf & _
+"FROM OAUSER_incident " & vbCrLf & _
+"WHERE (((OAUSER_incident.number)= '" & strINCRES2 & "'));"
+
+Set sqlj1 = CurrentDb.OpenRecordset(sqlINCRES2)
+
+If sqlj1.RecordCount > 0 Then
+strkbar = (sqlj1.Fields(1))
+Else
+End If
+Set sqlj1 = Nothing
+
+Sqlkbar = "SELECT Kb_knowledge.number, Kb_knowledge.short_description" & vbCrLf & _
+"FROM Kb_knowledge " & vbCrLf & _
+"WHERE (((Kb_knowledge.number)= '" & strkbar & "'));"
+
+Set sqlk = CurrentDb.OpenRecordset(Sqlkbar)
+
+If sqlk.RecordCount > 0 Then
+kbar = strINCRES2 & " - " & (sqlk.Fields(1))
+Else
+
+End If
+Set sqlk = Nothing
+
+End Function
+
